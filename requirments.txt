@@ -1,0 +1,17 @@
+numpy
+ollama
+pandas
+pyarrow
+ijson
+sentence-transformers
+torch
+faiss-cpu
+rank-bm25
+duckdb
+pymupdf
+requests
+pyyaml
+transformers
+fastapi
+uvicorn
+pydantic
