@@ -1,6 +1,6 @@
 import ollama
 
-model = "qwen3:4b"
+model = "qwen3.5:4b"
 
 def weather(city):
     return f"The weather in {city} is sunny with a high of 25°C and a low of 15°C."

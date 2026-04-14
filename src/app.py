@@ -1,44 +1,170 @@
-from LLM.Bot import bot
-from LLM.Retriever import Retriever
 from LLM.Reranker import Reranker
+from LLM.Retriever import Retriever
+from ollama import chat
+
+
+
 class RagSystem:
-    def __init__(self):
-        self.llm = bot()
+    def __init__(self, model: str = "qwen3.5:4b"):
+        self.model = model
         self.retriever = Retriever()
         self.reranker = Reranker()
-        self.optimizer = bot()
-    def run(self):
-        print("Welcome to the ArXiv RAG System!")
-        print("Type '/exit' to quit.")
+        self.messages = []
+        self.tool_map = self._build_tool_map()
+ 
+    # ------------------------------------------------------------------ #
+    #  Tool registry                                                       #
+    # ------------------------------------------------------------------ #
+ 
+    def _build_tool_map(self) -> dict:
+        """Auto-build the tool map from all methods tagged as tools."""
+        tools = [self.get_papers]   # add new tools here and nowhere else
+        return {fn.__name__: fn for fn in tools}
+ 
+    def _run_tool(self, call) -> str:
+        name = call.function.name
+        args = call.function.arguments
+        print(f"\n[Tool Call] {name}({args})")
+ 
+        if name in self.tool_map:
+            return self.tool_map[name](**args)
+        return f"Unknown tool: '{name}'"
+ 
+    # ------------------------------------------------------------------ #
+    #  Tool: get_papers                                                    #
+    # ------------------------------------------------------------------ #
+ 
+    def get_papers(self, query: str, number_of_papers: int = 5) -> str:
+        """Search and retrieve the most relevant academic papers for a given query.
+ 
+        Args:
+            query: The search query describing the research topic.
+            number_of_papers: How many top papers to return (between 1 and 20).
+ 
+        Returns:
+            A numbered list of the most relevant paper titles with relevance scores.
+        """
+        number_of_papers = max(1, min(number_of_papers, 20))
+ 
+        retrieved_docs = self.retriever.retrieve(query, top_k=100)
+        if not retrieved_docs:
+            return "No relevant papers found for this query."
+ 
+        print(f"\n[Retriever] {len(retrieved_docs)} candidates for: '{query}'")
+ 
+        top20 = self.reranker.rerank(query, retrieved_docs, top_n=20)
+        print("\n[Reranker] Top 20:")
+        for i, doc in enumerate(top20):
+            print(f"  {i+1:2}. {doc['title']}  (score: {doc['rerank_score']:.4f})")
+ 
+        final_docs = self.reranker.rerank(query, retrieved_docs, top_n=number_of_papers)
+        print(f"\n[Final] Top {number_of_papers} sent to LLM:")
+        for i, doc in enumerate(final_docs):
+            print(f"  {i+1}. {doc['title']}  (score: {doc['rerank_score']:.4f})")
+ 
+        return "\n\n".join(
+            f"{i+1}. {doc['title']}\n   Relevance score: {doc['rerank_score']:.4f}"
+            for i, doc in enumerate(final_docs)
+        )
+ 
+    # ------------------------------------------------------------------ #
+    #  Agentic loop                                                        #
+    # ------------------------------------------------------------------ #
+ 
+    def _agent_step(self, user_message: str) -> str:
+        self.messages.append({"role": "user", "content": user_message})
+ 
         while True:
-            query = input("\n>> ")
+            stream = chat(
+                model=self.model,
+                messages=self.messages,
+                tools=list(self.tool_map.values()),
+                stream=True,
+                think=True,
+            )
+ 
+            thinking      = ""
+            content       = ""
+            tool_calls    = []
+            done_thinking = False
+ 
+            for chunk in stream:
+                if chunk.message.thinking:
+                    thinking += chunk.message.thinking
+                    print(chunk.message.thinking, end="", flush=True)
+ 
+                if chunk.message.content:
+                    if not done_thinking:
+                        done_thinking = True
+                        print("\n -----done thinking----- \n\n ")
+                    content += chunk.message.content
+                    print(chunk.message.content, end="", flush=True)
+ 
+                if chunk.message.tool_calls:
+                    tool_calls.extend(chunk.message.tool_calls)
+ 
+            if thinking or content or tool_calls:
+                self.messages.append({
+                    "role":       "assistant",
+                    "thinking":   thinking,
+                    "content":    content,
+                    "tool_calls": tool_calls,
+                })
+ 
+            if not tool_calls:
+                print()
+                return content
+ 
+            for call in tool_calls:
+                result = self._run_tool(call)
+                self.messages.append({
+                    "role":      "tool",
+                    "tool_name": call.function.name,
+                    "content":   result,
+                })
+ 
+    # ------------------------------------------------------------------ #
+    #  Public interface                                                    #
+    # ------------------------------------------------------------------ #
+ 
+    def chat(self, user_message: str) -> str:
+        return self._agent_step(user_message)
+ 
+    def reset(self):
+        self.messages = []
+        print("[System] Conversation history cleared.")
+ 
+    def run(self):
+        print("=" * 60)
+        print(f"  ArXiv Agentic RAG  |  model: {self.model}")
+        print("  Commands: /exit  /reset  /history")
+        print("=" * 60)
+ 
+        while True:
+            try:
+                query = input("\n>> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nGoodbye!")
+                break
+ 
+            if not query:
+                continue
             if query.lower() == "/exit":
                 print("Goodbye!")
                 break
-            optimized =self.optimizer.ask(f"""Given the user query: '{query}', 
-                                          generate a more specific search query to retrieve relevant papers from ArXiv. 
-                                          Focus on key terms and concepts, reply with only the optimized query without any explanation.
-                                          example: user query: 'What are the latest advancements in deep learning for natural language processing?'
-                                          optimized query: 'latest advancements in deep learning natural language processing , methods , applications , theories '
-                                          """)
-            retrieved_docs = self.retriever.retrieve(optimized, top_k=100)
-            print("top 100 papers:\n")
-            print("\n\n".join([f"{doc['title']} , distance: {doc['distance']}" for doc in retrieved_docs]))
-            if not retrieved_docs:
-                print("No relevant papers found.")
+            if query.lower() == "/reset":
+                self.reset()
                 continue
-            ranked_docs = self.reranker.rerank(query, retrieved_docs,top_n=20)
-
-            print("Top 5 papers:\n")
-            print("\n\n".join([f"{i+1}. {doc['title']}, score: {doc['rerank_score']}" for i, doc in enumerate(ranked_docs)]))
-            reranked_docs = self.reranker.rerank(query, retrieved_docs,top_n=5)
-
-            print("Top 20 papers:\n")
-            print("\n\n".join([f"{i+1}. {doc['title']}, score: {doc['rerank_score']}" for i, doc in enumerate(reranked_docs)]))
-
-            ##context = "\n\n".join([f"Title: {doc['title']}\nAbstract: {doc['abstract']}" for doc in ranked_docs[:5]])
-            ##prompt = f"Based on the following papers:\n{context}\n\nAnswer the question: {query}"
-            ##self.llm.ask(prompt)
+            if query.lower() == "/history":
+                for turn in self.messages:
+                    role = turn["role"].upper()
+                    body = turn.get("content") or str(turn.get("tool_calls", ""))
+                    print(f"\n[{role}]\n{body}")
+                continue
+ 
+            self._agent_step(query)
+ 
+ 
 if __name__ == "__main__":
-    system = RagSystem()
+    system = RagSystem(model="qwen3.5:4b")
     system.run()
