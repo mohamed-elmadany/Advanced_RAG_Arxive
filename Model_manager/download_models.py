@@ -1,32 +1,38 @@
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
-from .paths import EMBEDDING_MODEL_PATH, RERANKER_MODEL_PATH
+
+from core.config import config
 
 
 def download_embedding_model():
     print("Downloading embedding model...")
-    model = SentenceTransformer("BAAI/bge-small-en-v1.5")
-    EMBEDDING_MODEL_PATH.mkdir(parents=True, exist_ok=True)
-    model.save(str(EMBEDDING_MODEL_PATH))
-    print("Saved to:", EMBEDDING_MODEL_PATH)
+    model = SentenceTransformer(config.EMBEDDING_MODEL_NAME)
+    config.EMBEDDING_MODEL_PATH.mkdir(parents=True, exist_ok=True)
+    model.save(str(config.EMBEDDING_MODEL_PATH))
+    print("Saved to:", config.EMBEDDING_MODEL_PATH)
 
 
 def download_reranker_model():
     print("Downloading reranker model...")
-    model_name = "BAAI/bge-reranker-base"
+    tokenizer = AutoTokenizer.from_pretrained(config.RERANKER_MODEL_NAME)
+    model = AutoModelForSequenceClassification.from_pretrained(config.RERANKER_MODEL_NAME)
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForSequenceClassification.from_pretrained(model_name)
+    config.RERANKER_MODEL_PATH.mkdir(parents=True, exist_ok=True)
 
-    RERANKER_MODEL_PATH.mkdir(parents=True, exist_ok=True)
+    tokenizer.save_pretrained(config.RERANKER_MODEL_PATH)
+    model.save_pretrained(config.RERANKER_MODEL_PATH)
 
-    tokenizer.save_pretrained(RERANKER_MODEL_PATH)
-    model.save_pretrained(RERANKER_MODEL_PATH)
+    print("Saved to:", config.RERANKER_MODEL_PATH)
 
-    print("Saved to:", RERANKER_MODEL_PATH)
+
+def download_qwen_reranker_model():
+    print("Downloading qwen reranker...")
+    model = CrossEncoder(model_name_or_path=config.QWEN_RERANKER_MODEL_NAME, revision="refs/pr/24")
+    config.QWEN_RERANKER_MODEL_PATH.mkdir(parents=True, exist_ok=True)
+    model.save(str(config.QWEN_RERANKER_MODEL_PATH))
+    print("Saved to:", config.QWEN_RERANKER_MODEL_PATH)
 
 
 if __name__ == "__main__":
     download_embedding_model()
-    # optional
-    download_reranker_model()
+    download_qwen_reranker_model()
