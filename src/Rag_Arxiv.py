@@ -1,14 +1,17 @@
 import json
 import asyncio
+import logging
 from pathlib import Path
 
 import arxiv
 import fitz
 from ollama import AsyncClient
 
-from LLM.Reranker import Reranker
-from LLM.Retriever import Retriever
+from Retrieval.Reranker import Reranker
+from Retrieval.Retriever import Retriever
 from core.config import config
+
+logger = logging.getLogger(__name__)
 
 
 class RagSystem:
@@ -82,11 +85,14 @@ class RagSystem:
         papers_dir = Path(config.PAPERS_DIR)
         papers_dir.mkdir(parents=True, exist_ok=True)
 
+        logger.info("get_full_paper_content requested=%s", ids)
+
         results = []
         try:
             search = arxiv.Search(id_list=ids)
             paper_iter = search.results()
         except Exception as exc:
+            logger.exception("arxiv search failed for ids=%s", ids)
             return f"[arxiv search failed: {exc}]"
 
         for pid, paper in zip(ids, paper_iter):
@@ -97,12 +103,16 @@ class RagSystem:
                 filename = f"{clean_title}.pdf"
                 pdf_path = papers_dir / filename
 
-                if not pdf_path.exists():
+                if pdf_path.exists():
+                    logger.info("PDF cache hit %s -> %s", pid, pdf_path)
+                else:
                     pdf_path = Path(
                         paper.download_pdf(dirpath=str(papers_dir), filename=filename)
                     )
+                    logger.info("PDF downloaded %s -> %s", pid, pdf_path)
 
                 if not pdf_path.exists():
+                    logger.warning("PDF not saved for %s", pid)
                     results.append(f"[error fetching {pid}: PDF not saved]")
                     continue
 
@@ -110,10 +120,12 @@ class RagSystem:
                     full_text = "".join(page.get_text() for page in doc)
 
                 if not full_text.strip():
+                    logger.warning("empty PDF text for %s at %s", pid, pdf_path)
                     results.append(f"[error fetching {pid}: empty PDF text]")
                 else:
                     results.append(full_text)
             except Exception as exc:
+                logger.exception("get_full_paper_content failed for %s", pid)
                 results.append(f"[error fetching {pid}: {exc}]")
 
         if not results:
@@ -124,18 +136,28 @@ class RagSystem:
         if not query or not isinstance(query, str):
             return "No query provided."
         number_of_papers = max(1, min(number_of_papers, 20))
+        logger.info("get_papers query=%r requested=%d", query, number_of_papers)
         try:
             retrieved_docs = self.retriever.retrieve(query, top_k=100)
         except Exception as exc:
+            logger.exception("retrieval failed for query=%r", query)
             return f"[retrieval failed: {exc}]"
         if not retrieved_docs:
+            logger.info("get_papers retrieved=0")
             return "No papers found."
         try:
             final_docs = self.reranker.rerank(
                 query, retrieved_docs, top_n=number_of_papers
             )
         except Exception as exc:
+            logger.exception("rerank failed for query=%r", query)
             return f"[rerank failed: {exc}]"
+        logger.info(
+            "get_papers retrieved=%d reranked=%d top_ids=%s",
+            len(retrieved_docs),
+            len(final_docs),
+            [d["arxiv_id"] for d in final_docs],
+        )
         return "\n\n".join(
             f"paper_id {d['arxiv_id']}. title: {d['title']}\n Abstract: {d['abstract']}"
             for d in final_docs

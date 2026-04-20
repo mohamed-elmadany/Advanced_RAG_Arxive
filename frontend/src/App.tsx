@@ -194,9 +194,9 @@ export default function App() {
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth">
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
-                msg.role === 'user' 
-                ? 'bg-blue-600 text-white rounded-tr-none' 
+              <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm shadow-sm whitespace-pre-wrap ${
+                msg.role === 'user'
+                ? 'bg-blue-600 text-white rounded-tr-none'
                 : 'bg-slate-800 border border-slate-700 rounded-tl-none'
               }`}>
                 {msg.content}
@@ -207,7 +207,7 @@ export default function App() {
           {/* Current Stream */}
           {(streamingText || isStreaming) && (
             <div className="flex justify-start">
-              <div className="max-w-[80%] bg-slate-800 border-l-2 border-blue-500 rounded-2xl rounded-tl-none px-4 py-3 text-sm animate-in fade-in slide-in-from-left-2">
+              <div className="max-w-[80%] bg-slate-800 border-l-2 border-blue-500 rounded-2xl rounded-tl-none px-4 py-3 text-sm whitespace-pre-wrap animate-in fade-in slide-in-from-left-2">
                 {streamingText || <span className="animate-pulse text-slate-500">Thinking...</span>}
               </div>
             </div>
