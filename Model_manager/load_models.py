@@ -14,12 +14,12 @@ def get_embedding_model():
 
     if _embedding_model is None:
         try:
-            _embedding_model = SentenceTransformer(str(config.EMBEDDING_MODEL_PATH))
+            _embedding_model = SentenceTransformer(str(config.EMBEDDING_MODEL_PATH)).to(device)
         except Exception as e:
             print(F"\nmodel:{config.EMBEDDING_MODEL_NAME} not found..")
             print(F"\ndownloading model:{config.EMBEDDING_MODEL_NAME} .. ")
             download_embedding_model()
-            _embedding_model = SentenceTransformer(str(config.EMBEDDING_MODEL_PATH))
+            _embedding_model = SentenceTransformer(str(config.EMBEDDING_MODEL_PATH)).to(device)
 
     return _embedding_model
 
